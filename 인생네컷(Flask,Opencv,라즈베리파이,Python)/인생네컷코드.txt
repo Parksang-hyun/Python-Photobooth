@@ -1,0 +1,155 @@
+import cv2
+from flask import Flask, render_template, Response, flash
+import numpy as np
+
+count = 1
+app = Flask(__name__)
+app.secret_key = 'your_secret_key'  # flash 메시지를 위해 비밀 키 설정
+cnt_sunglass = False
+cnt_hat = False
+frame = None 
+captured_images = []  # 캡처한 이미지 파일 경로를 저장할 리스트
+face_cascade_path = "/home/pi/opencv/data/haarcascades/haarcascade_frontalface_alt.xml"
+
+face_cascade = cv2.CascadeClassifier(face_cascade_path)
+sunglasses_path = '/home/pi/webapps/mission/sunglasses.png'
+sunglasses_img = cv2.imread(sunglasses_path, cv2.IMREAD_UNCHANGED)
+hat_path = '/home/pi/webapps/mission/hat.png'
+hat_img = cv2.imread(hat_path, cv2.IMREAD_UNCHANGED)
+
+if sunglasses_img is None:
+    print("선글라스 이미지를 로드할 수 없습니다.")
+if hat_img is None:
+    print("모자 이미지를 로드할 수 없습니다.")
+
+def overlay_sunglasses(face_image, sunglasses, overlay_position):
+    overlay_x, overlay_y = overlay_position
+    sw, sh = sunglasses.shape[1], sunglasses.shape[0]
+    for i in range(sh):
+        for j in range(sw):
+            if (0 <= overlay_y + i < face_image.shape[0]) and (0 <= overlay_x + j < face_image.shape[1]):
+                alpha = sunglasses[i, j, 3] / 255.0
+                face_image[overlay_y + i, overlay_x + j, :3] = (
+                    (1 - alpha) * face_image[overlay_y + i, overlay_x + j, :3] + alpha * sunglasses[i, j, :3]
+                )
+    return face_image
+
+def overlay_hat(face_image, hat, overlay_position):
+    overlay_x, overlay_y = overlay_position
+    rw, rh = hat.shape[1], hat.shape[0]
+    for i in range(rh):
+        for j in range(rw):
+            if (0 <= overlay_y + i < face_image.shape[0]) and (0 <= overlay_x + j < face_image.shape[1]):
+                alpha = hat[i, j, 3] / 255.0
+                face_image[overlay_y + i, overlay_x + j, :3] = (
+                    (1 - alpha) * face_image[overlay_y + i, overlay_x + j, :3] + alpha * hat[i, j, :3]
+                )
+    return face_image
+
+def imgDetector(img, face_cascade):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=3, minSize=(30, 30))
+
+    for (x, y, w, h) in faces:
+        if cnt_sunglass: 
+            overlay_position = (x, y + int(h / 4)) 
+            resized_sunglasses = cv2.resize(sunglasses_img, (w, int(w * (sunglasses_img.shape[0] / sunglasses_img.shape[1]))))
+            img = overlay_sunglasses(img, resized_sunglasses, overlay_position)
+        if cnt_hat:  
+            overlay_position = (x + int(w / 5), y - int(h / 2) - 20)
+            resized_hat = cv2.resize(hat_img, (w, int(w * (hat_img.shape[0] / hat_img.shape[1]))))
+            img = overlay_hat(img, resized_hat, overlay_position)
+
+    return img
+
+def gen(): 
+    global frame
+    camera = cv2.VideoCapture(0) 
+    if not camera.isOpened():
+        print("카메라를 열 수 없습니다.")
+        return
+    camera.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+    
+    while True: 
+        ret, frame = camera.read() 
+        if not ret:
+            print("프레임을 읽을 수 없습니다.")
+            break
+        
+        retImg = imgDetector(frame, face_cascade) 
+        ret, buffer = cv2.imencode('.jpg', retImg)
+        frame = buffer.tobytes()
+        
+        yield (
+            b"--frame\r\n"
+            b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
+        )
+
+    camera.release() 
+    cv2.destroyAllWindows()
+
+@app.route("/") 
+def index(): 
+    return render_template("index.html")
+
+@app.route("/video_feed") 
+def video_feed(): 
+    return Response(gen(), mimetype="multipart/x-mixed-replace; boundary=frame")
+
+@app.route("/show_sunglasses", methods=["POST"])
+def show_sunglasses():
+    global cnt_sunglass
+    cnt_sunglass = True
+    return '', 204  
+
+@app.route("/hide_sunglasses", methods=["POST"])
+def hide_sunglasses():
+    global cnt_sunglass
+    cnt_sunglass = False
+    return '', 204  
+
+@app.route("/show_hat", methods=["POST"])
+def show_hat():
+    global cnt_hat
+    cnt_hat = True
+    return '', 204  
+
+@app.route("/hide_hat", methods=["POST"])
+def hide_hat():
+    global cnt_hat
+    cnt_hat = False
+    return '', 204  
+
+@app.route("/capture", methods=["POST"])
+def capture():
+    global frame, captured_images
+    if frame is not None:
+        captured_images.append(frame.copy())  # 프레임을 리스트에 추가
+
+    # 4장의 사진을 찍었다면, 합쳐서 저장
+    if len(captured_images) == 4:
+        combine_images(captured_images)
+        flash('이미지가 저장되었습니다!')  # 플래시 메시지 추가
+        captured_images = []  # 리스트 초기화
+
+    return '', 204  
+
+def combine_images(frames):
+    global count  # count를 global로 선언
+    # 각 프레임을 1/2 크기로 축소
+    images = [cv2.resize(frame, (160, 120)) for frame in frames]  # 320x240에서 160x120으로 축소
+
+    # 2x2 배열로 합치기
+    top_row = np.hstack((images[0], images[1]))  # 첫 번째와 두 번째 이미지를 가로로 합치기
+    bottom_row = np.hstack((images[2], images[3]))  # 세 번째와 네 번째 이미지를 가로로 합치기
+    combined_image = np.vstack((top_row, bottom_row))  # 두 행을 세로로 합치기
+
+    # 최종 이미지 저장
+    combined_filename = f"/home/pi/webapps/mission/image/combined_{count}.jpg"
+    cv2.imwrite(combined_filename, combined_image)
+    print(f"합쳐진 이미지 저장됨: {combined_filename}")
+    count += 1  # 다음 이미지를 위해 카운트 증가
+
+if __name__ == "__main__": 
+    app.run(host="0.0.0.0", port=9000, debug=True, threaded=True)

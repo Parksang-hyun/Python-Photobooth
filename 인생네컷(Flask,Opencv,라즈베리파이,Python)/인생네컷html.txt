@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <title>Video Streaming</title>
+</head>
+<body>
+    <h1>Live Video Streaming</h1>
+    <img src="{{ url_for('video_feed') }}">
+    <button onclick="showSunglasses()">선글라스 보기</button>
+    <button onclick="hideSunglasses()">선글라스 해제</button>
+    <button onclick="showHat()">모자 보기</button>
+    <button onclick="hideHat()">모자 숨기기</button>
+    <button onclick="capture()">사진 찍기</button>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <ul>
+        {% for message in messages %}
+          <li>{{ message }}</li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <script>
+        function showSunglasses() {
+            fetch('/show_sunglasses', { method: 'POST' })
+                .then(response => {
+                    if (response.ok) {
+                        alert('선글라스를 착용했습니다!');
+                    } else {
+                        alert('선글라스를 착용할 수 없습니다.');
+                    }
+                })
+                .catch(error => {
+                    console.error('오류 발생:', error);
+                });
+        }
+
+        function hideSunglasses() {
+            fetch('/hide_sunglasses', { method: 'POST' })
+                .then(response => {
+                    if (response.ok) {
+                        alert('선글라스가 해제되었습니다!');
+                    } else {
+                        alert('선글라스를 해제할 수 없습니다.');
+                    }
+                })
+                .catch(error => {
+                    console.error('오류 발생:', error);
+                });
+        }
+
+        function showHat() {
+            fetch('/show_hat', { method: 'POST' })
+                .then(response => {
+                    if (response.ok) {
+                        alert('모자를 착용했습니다!');
+                    } else {
+                        alert('모자를 착용할 수 없습니다.');
+                    }
+                })
+                .catch(error => {
+                    console.error('오류 발생:', error);
+                });
+        }
+
+        function hideHat() {
+            fetch('/hide_hat', { method: 'POST' })
+                .then(response => {
+                    if (response.ok) {
+                        alert('모자가 해제되었습니다!');
+                    } else {
+                        alert('모자를 해제할 수 없습니다.');
+                    }
+                })
+                .catch(error => {
+                    console.error('오류 발생:', error);
+                });
+        }
+
+        function capture() {
+            fetch('/capture', { method: 'POST' })
+                .then(response => {
+                    if (response.ok) {
+                        alert('(찰칵) 사진을 찍었습니다!');
+                    } else {
+                        alert('사진을 찍을 수 없습니다.');
+                    }
+                })
+                .catch(error => {
+                    console.error('오류 발생:', error);
+                });
+        }
+    </script>
+</body>
+</html>
